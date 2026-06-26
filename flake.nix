@@ -44,6 +44,7 @@
               delve
               xray
               just
+              gh
               git
             ]
             ++ linuxDeps

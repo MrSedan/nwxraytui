@@ -151,7 +151,7 @@ func (d *Daemon) connect(idx int, mode string) {
 
 	serverHost := xray.ServerHost(srv.Config)
 	if mode == "tun" {
-		if err := proxy.SetTunRoutes(serverHost); err != nil {
+		if err := proxy.SetTunRoutes(serverHost, xray.DNSServerIP(merged)); err != nil {
 			log.Printf("SetTunRoutes: %v", err)
 		}
 	}

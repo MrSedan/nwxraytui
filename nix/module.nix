@@ -54,5 +54,9 @@ in {
       trustedInterfaces = [ "tun0" ];
       checkReversePath = lib.mkDefault "loose";
     };
+
+    # systemd-resolved is required for resolvconf to configure per-interface
+    # DNS at runtime (used to route DNS queries through the tunnel).
+    services.resolved.enable = lib.mkIf cfg.enableTun (lib.mkDefault true);
   };
 }

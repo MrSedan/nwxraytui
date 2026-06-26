@@ -98,7 +98,11 @@ func unsetLinux() error {
 	exec.Command("gsettings", "set", "org.gnome.system.proxy", "mode", "none").Run()
 	home, _ := os.UserHomeDir()
 	path := filepath.Join(home, ".config", "nwxraytui", "proxy-env.sh")
-	return os.Remove(path)
+	err := os.Remove(path)
+    	if err != nil && !os.IsNotExist(err) {
+        	return err
+ 	}
+    	return nil
 }
 
 func writeEnvFile(socksPort, httpPort int) error {

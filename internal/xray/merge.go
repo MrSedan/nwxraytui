@@ -103,8 +103,47 @@ func MergeConfig(serverConfig json.RawMessage, mode string) (json.RawMessage, er
 	for i, ob := range outbounds {
 		outbounds[i] = markFreedomOutbound(ob)
 	}
+	// Add dns-out outbound if not already present. It lets xray answer DNS
+	// queries that arrive via the TUN using its own DNS module (DoH etc.)
+	// instead of forwarding raw UDP through the proxy outbound.
+	hasDNSOut := false
+	for _, ob := range outbounds {
+		var meta struct {
+			Tag string `json:"tag"`
+		}
+		json.Unmarshal(ob, &meta)
+		if meta.Tag == "dns-out" {
+			hasDNSOut = true
+			break
+		}
+	}
+	if !hasDNSOut {
+		outbounds = append(outbounds, json.RawMessage(`{"tag":"dns-out","protocol":"dns"}`))
+	}
 	if newOutbounds, err := json.Marshal(outbounds); err == nil {
 		cfg["outbounds"] = newOutbounds
+	}
+
+	// Prepend a routing rule that intercepts port-53 traffic from the TUN
+	// inbound and hands it to xray's internal DNS module.
+	var routing map[string]json.RawMessage
+	if raw, ok := cfg["routing"]; ok {
+		json.Unmarshal(raw, &routing)
+	}
+	if routing == nil {
+		routing = make(map[string]json.RawMessage)
+	}
+	var rules []json.RawMessage
+	if raw, ok := routing["rules"]; ok {
+		json.Unmarshal(raw, &rules)
+	}
+	dnsRule := json.RawMessage(`{"type":"field","inboundTag":["tun"],"port":"53","outboundTag":"dns-out"}`)
+	rules = append([]json.RawMessage{dnsRule}, rules...)
+	if newRules, err := json.Marshal(rules); err == nil {
+		routing["rules"] = newRules
+	}
+	if newRouting, err := json.Marshal(routing); err == nil {
+		cfg["routing"] = newRouting
 	}
 
 	return json.Marshal(cfg)

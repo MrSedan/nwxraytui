@@ -24,12 +24,14 @@ type App struct {
 	inputMode  bool
 	inputCmd   string // "add" or "del"
 	inputText  string
+	proxyMode  string // last non-tun mode, used to toggle TUN off
 }
 
 func New(client *ipc.Client) *App {
 	return &App{
 		client:     client,
 		serverList: panels.NewServerList(),
+		proxyMode:  "socks",
 	}
 }
 
@@ -108,7 +110,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "t":
 			if a.status.TunAvailable {
-				cmds = append(cmds, sendCmd(a.client, ipc.CmdSwitch{ServerIdx: a.serverList.SelectedIdx(), Mode: "tun"}))
+				mode := "tun"
+				if a.status.Running && a.status.Mode == "tun" {
+					mode = a.proxyMode // toggle TUN off, back to proxy mode
+				}
+				cmds = append(cmds, sendCmd(a.client, ipc.CmdSwitch{ServerIdx: a.serverList.SelectedIdx(), Mode: mode}))
 			}
 		case "r":
 			cmds = append(cmds, sendCmd(a.client, ipc.CmdRefresh{}))
@@ -137,6 +143,9 @@ func (a *App) handleIPC(env ipc.Envelope) {
 		a.status = ev
 		a.detail.Status = ev
 		a.detail.TunAvailable = ev.TunAvailable
+		if ev.Mode != "" && ev.Mode != "tun" {
+			a.proxyMode = ev.Mode
+		}
 	case ipc.TypeEventServerList:
 		ev, _ := ipc.UnmarshalPayload[ipc.EventServerList](env)
 		a.serverList.Servers = ev.Servers

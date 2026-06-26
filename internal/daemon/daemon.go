@@ -6,8 +6,10 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sync"
+	"syscall"
 
 	"github.com/mrsedan/nwxraytui/internal/config"
 	"github.com/mrsedan/nwxraytui/internal/ipc"
@@ -53,6 +55,17 @@ func (d *Daemon) Run(socketPath string) error {
 	defer srv.Close()
 
 	go d.forwardLogs()
+
+	// Clean up xray and TUN routes on termination so the network is not
+	// left broken when the daemon is killed or the service is stopped.
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sig
+		d.disconnect()
+		srv.Close()
+		os.Exit(0)
+	}()
 
 	for {
 		conn, err := srv.Accept()

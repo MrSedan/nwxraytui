@@ -57,7 +57,7 @@
 
         packages.default = pkgs.buildGoModule {
           pname = "nwxraytui";
-          version = "0.1.0";
+          version = "0.1.1";
           src = ./.;
           vendorHash = "sha256-qrX55UC7IMOZS8yDB+JIf5fAatfsRaMl38T1rDKHSAg=";
           nativeBuildInputs = with pkgs; [

@@ -6,8 +6,14 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+    }:
+    flake-utils.lib.eachDefaultSystem (
+      system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
         inherit (pkgs) lib;
@@ -15,14 +21,33 @@
         isLinux = lib.hasSuffix "-linux" system;
         isDarwin = lib.hasSuffix "-darwin" system;
 
-        linuxDeps = lib.optionals isLinux (with pkgs; [ iproute2 iptables nftables ]);
+        linuxDeps = lib.optionals isLinux (
+          with pkgs;
+          [
+            iproute2
+            iptables
+            nftables
+          ]
+        );
         darwinDeps = lib.optionals isDarwin [ ];
-      in {
+      in
+      {
         devShells.default = pkgs.mkShell {
           name = "nwxraytui";
-          packages = with pkgs; [
-            go gopls gotools golangci-lint delve xray just git
-          ] ++ linuxDeps ++ darwinDeps;
+          packages =
+            with pkgs;
+            [
+              go
+              gopls
+              gotools
+              golangci-lint
+              delve
+              xray
+              just
+              git
+            ]
+            ++ linuxDeps
+            ++ darwinDeps;
           shellHook = ''
             export GOPATH="$PWD/.gopath"
             export PATH="$GOPATH/bin:$PATH"
@@ -35,6 +60,21 @@
           version = "0.1.0";
           src = ./.;
           vendorHash = "sha256-qrX55UC7IMOZS8yDB+JIf5fAatfsRaMl38T1rDKHSAg=";
+          nativeBuildInputs = with pkgs; [
+            makeWrapper
+          ];
+
+          postInstall = ''
+            wrapProgram $out/bin/nwxraytui \
+              --prefix PATH : ${
+                lib.makeBinPath [
+                  pkgs.xray
+                  pkgs.iproute2
+                  pkgs.iptables
+                  pkgs.nftables
+                ]
+              }
+          '';
           meta = {
             description = "TUI for xray subscription and TUN management";
             license = lib.licenses.mit;
@@ -42,7 +82,8 @@
           };
         };
       }
-    ) // {
+    )
+    // {
       nixosModules.nwxraytui = import ./nix/module.nix;
       darwinModules.nwxraytui = import ./nix/darwin-module.nix;
     };

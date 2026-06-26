@@ -98,58 +98,37 @@ func SetTunRoutes(serverHost, dnsServer string) error {
 		return fmt.Errorf("route 128/1: %w: %s", err, out)
 	}
 	log.Printf("routes: 0/1 and 128/1 via %s", tunIface)
-	setDNSRedirect(dnsServer)
+	setDNS(dnsServer)
 	return nil
 }
 
-const dnsRedirectFallback = "1.1.1.1"
+const dnsFallback = "1.1.1.1"
 
-// activeDNSTarget tracks which IP we DNATed to so we can remove the exact
-// same rule in unsetDNSRedirect.
-var activeDNSTarget string
-
-func setDNSRedirect(dnsServer string) {
+func setDNS(dnsServer string) {
 	target := dnsServer
 	if target == "" {
-		target = dnsRedirectFallback
+		target = dnsFallback
 	}
-	activeDNSTarget = target
-	for _, proto := range []string{"udp", "tcp"} {
-		// xray marks its own direct-outbound sockets with TunFwmark; skip them
-		// to avoid a loop.
-		exec.Command("iptables", "-t", "nat", "-A", "OUTPUT",
-			"-p", proto, "--dport", "53",
-			"-m", "mark", "--mark", fmt.Sprintf("%d", tunFwmark),
-			"-j", "RETURN").Run()
-		if out, err := exec.Command("iptables", "-t", "nat", "-A", "OUTPUT",
-			"-p", proto, "--dport", "53",
-			"-j", "DNAT", "--to-destination", target+":53").CombinedOutput(); err != nil {
-			log.Printf("dns: iptables DNAT %s/53: %v: %s", proto, err, out)
-		}
-	}
-	log.Printf("dns: redirecting port 53 → %s via iptables", target)
-}
-
-func unsetDNSRedirect() {
-	target := activeDNSTarget
-	if target == "" {
+	// resolvconf -a tun0 -m 0 -x: highest priority, exclusive (overrides DHCP DNS)
+	cmd := exec.Command("resolvconf", "-a", tunIface, "-m", "0", "-x")
+	cmd.Stdin = strings.NewReader("nameserver " + target + "\n")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		log.Printf("dns: resolvconf -a: %v: %s", err, out)
 		return
 	}
-	for _, proto := range []string{"udp", "tcp"} {
-		exec.Command("iptables", "-t", "nat", "-D", "OUTPUT",
-			"-p", proto, "--dport", "53",
-			"-m", "mark", "--mark", fmt.Sprintf("%d", tunFwmark),
-			"-j", "RETURN").Run()
-		exec.Command("iptables", "-t", "nat", "-D", "OUTPUT",
-			"-p", proto, "--dport", "53",
-			"-j", "DNAT", "--to-destination", target+":53").Run()
+	log.Printf("dns: set %s via resolvconf for %s", target, tunIface)
+}
+
+func unsetDNS() {
+	if out, err := exec.Command("resolvconf", "-d", tunIface, "-f").CombinedOutput(); err != nil {
+		log.Printf("dns: resolvconf -d: %v: %s", err, out)
+		return
 	}
-	activeDNSTarget = ""
-	log.Printf("dns: iptables DNS redirect removed")
+	log.Printf("dns: removed resolvconf entry for %s", tunIface)
 }
 
 func UnsetTunRoutes(serverHost string) {
-	unsetDNSRedirect()
+	unsetDNS()
 	exec.Command("ip", "route", "del", "0.0.0.0/1", "dev", tunIface).Run()
 	exec.Command("ip", "route", "del", "128.0.0.0/1", "dev", tunIface).Run()
 	for _, cidr := range localBypass {

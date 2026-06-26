@@ -45,5 +45,14 @@ in {
         CapabilityBoundingSet = [ "CAP_NET_ADMIN" ];
       };
     };
+
+    # xray-core's tun inbound leaves addressing/routing to the OS. The daemon
+    # adds a split-default route through tun0, which makes return traffic
+    # asymmetric — so the interface must be trusted by the firewall and reverse
+    # path filtering relaxed, mirroring services.mihomo.tunMode.
+    networking.firewall = lib.mkIf cfg.enableTun {
+      trustedInterfaces = [ "tun0" ];
+      checkReversePath = lib.mkDefault "loose";
+    };
   };
 }

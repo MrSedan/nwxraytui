@@ -13,6 +13,11 @@ import (
 
 const tunIface = "tun0"
 
+// tunAddr is the point-to-point address assigned to the TUN device. xray-core's
+// tun inbound brings the interface up but assigns no layer-3 address, so we do
+// it here: source-address selection and on-link routing need it.
+const tunAddr = "198.18.0.1/30"
+
 // localBypass are networks kept off the tunnel: loopback, private LANs,
 // link-local, CGNAT and multicast. They are routed via the real gateway so
 // LAN hosts, the router (and any DNS it serves) stay reachable.
@@ -34,6 +39,17 @@ func SetTunRoutes(serverHost string) error {
 		return fmt.Errorf("default gateway: %w", err)
 	}
 	log.Printf("routes: gateway %s dev %s, adding routes via %s", gw, dev, tunIface)
+
+	// xray-core only creates the interface; assign its address and ensure it is
+	// up before routing. Address may already exist on reconnect — ignore that.
+	if out, err := exec.Command("ip", "address", "add", tunAddr, "dev", tunIface).CombinedOutput(); err != nil {
+		if !strings.Contains(string(out), "File exists") {
+			log.Printf("routes: assign %s to %s: %v: %s", tunAddr, tunIface, err, out)
+		}
+	}
+	if out, err := exec.Command("ip", "link", "set", tunIface, "up").CombinedOutput(); err != nil {
+		log.Printf("routes: bring %s up: %v: %s", tunIface, err, out)
+	}
 
 	if serverHost != "" {
 		ip, err := resolveToIP(serverHost)

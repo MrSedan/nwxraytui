@@ -1,5 +1,5 @@
 {
-  description = "NixXray — TUI app for xray subscription management and TUN connection";
+  description = "nwxraytui — TUI app for xray subscription management and TUN connection";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -15,36 +15,14 @@
         isLinux = lib.hasSuffix "-linux" system;
         isDarwin = lib.hasSuffix "-darwin" system;
 
-        linuxDeps = lib.optionals isLinux (with pkgs; [
-          iproute2
-          iptables
-          nftables
-        ]);
-
-        darwinDeps = lib.optionals isDarwin (with pkgs; [
-          # TUN on macOS is via utun — no extra packages needed
-        ]);
-      in
-      {
+        linuxDeps = lib.optionals isLinux (with pkgs; [ iproute2 iptables nftables ]);
+        darwinDeps = lib.optionals isDarwin [ ];
+      in {
         devShells.default = pkgs.mkShell {
-          name = "nixxray";
-
+          name = "nwxraytui";
           packages = with pkgs; [
-            # Go toolchain
-            go
-            gopls
-            gotools       # goimports, godoc, etc.
-            golangci-lint
-            delve         # debugger
-
-            # xray proxy core
-            xray
-
-            # Convenience
-            just          # Justfile task runner
-            git
+            go gopls gotools golangci-lint delve xray just git
           ] ++ linuxDeps ++ darwinDeps;
-
           shellHook = ''
             export GOPATH="$PWD/.gopath"
             export PATH="$GOPATH/bin:$PATH"
@@ -52,18 +30,21 @@
           '';
         };
 
-        # Placeholder package — fill in once go.mod exists
         packages.default = pkgs.buildGoModule {
-          pname = "nixxray";
+          pname = "nwxraytui";
           version = "0.1.0";
           src = ./.;
-          vendorHash = null; # replace with real hash after go mod vendor
+          # Run `go mod vendor` then update with `nix hash path vendor/`
+          vendorHash = null;
           meta = {
             description = "TUI for xray subscription and TUN management";
             license = lib.licenses.mit;
-            mainProgram = "nixxray";
+            mainProgram = "nwxraytui";
           };
         };
       }
-    );
+    ) // {
+      nixosModules.nwxraytui = import ./nix/module.nix;
+      darwinModules.nwxraytui = import ./nix/darwin-module.nix;
+    };
 }

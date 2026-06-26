@@ -32,6 +32,11 @@ func main() {
 }
 
 func runDaemon(cfg *config.Config, cfgPath string) {
+	if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
+		if err := config.Save(cfg, cfgPath); err != nil {
+			log.Printf("create default config: %v", err)
+		}
+	}
 	xrayBin, err := exec.LookPath("xray")
 	if err != nil {
 		log.Fatalf("xray not found in PATH: %v", err)

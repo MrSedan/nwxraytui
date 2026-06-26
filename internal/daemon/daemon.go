@@ -116,9 +116,7 @@ func (d *Daemon) handleEnvelope(env ipc.Envelope) {
 		d.cfg.Daemon.Autostart = cmd.Enabled
 	case ipc.TypeCmdAddSub:
 		cmd, _ := ipc.UnmarshalPayload[ipc.CmdAddSub](env)
-		d.mu.Lock()
 		d.cfg.Subscriptions.URLs = append(d.cfg.Subscriptions.URLs, cmd.URL)
-		d.mu.Unlock()
 		if err := config.Save(d.cfg, d.cfgPath); err != nil {
 			log.Printf("save config: %v", err)
 		}

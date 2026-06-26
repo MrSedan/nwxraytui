@@ -55,8 +55,19 @@ in {
       checkReversePath = lib.mkDefault "loose";
     };
 
-    # systemd-resolved is required for resolvconf to configure per-interface
+    # systemd-resolved is required for resolvectl to configure per-interface
     # DNS at runtime (used to route DNS queries through the tunnel).
     services.resolved.enable = lib.mkIf cfg.enableTun (lib.mkDefault true);
+
+    # Allow the daemon to call SetLinkDNS / SetLinkDomains / RevertLink on
+    # systemd-resolved without interactive polkit authentication.
+    security.polkit.extraConfig = lib.mkIf cfg.enableTun ''
+      polkit.addRule(function(action, subject) {
+        if (action.id.indexOf("org.freedesktop.resolve1.") === 0 &&
+            subject.user === "${cfg.user}") {
+          return polkit.Result.YES;
+        }
+      });
+    '';
   };
 }

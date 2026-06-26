@@ -11,10 +11,17 @@ import (
 // packets via the real interface instead of looping back into tun0.
 const TunFwmark = 255
 
+type tunSniffingSpec struct {
+	Enabled      bool     `json:"enabled"`
+	RouteOnly    bool     `json:"routeOnly"`
+	DestOverride []string `json:"destOverride"`
+}
+
 type tunInboundSpec struct {
-	Tag      string      `json:"tag"`
-	Protocol string      `json:"protocol"`
-	Settings tunSettings `json:"settings"`
+	Tag      string         `json:"tag"`
+	Protocol string         `json:"protocol"`
+	Settings tunSettings    `json:"settings"`
+	Sniffing tunSniffingSpec `json:"sniffing"`
 }
 
 // tunSettings mirrors xray-core's proxy/tun Config. That inbound only brings
@@ -37,6 +44,11 @@ func buildTunInbound() (json.RawMessage, error) {
 		Settings: tunSettings{
 			Name: name,
 			MTU:  1500,
+		},
+		Sniffing: tunSniffingSpec{
+			Enabled:      true,
+			RouteOnly:    true,
+			DestOverride: []string{"http", "tls", "quic"},
 		},
 	}
 	return json.Marshal(spec)

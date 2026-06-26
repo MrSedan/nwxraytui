@@ -34,8 +34,7 @@
           pname = "nwxraytui";
           version = "0.1.0";
           src = ./.;
-          # Run `go mod vendor` then update with `nix hash path vendor/`
-          vendorHash = null;
+          vendorHash = "sha256-qrX55UC7IMOZS8yDB+JIf5fAatfsRaMl38T1rDKHSAg=";
           meta = {
             description = "TUI for xray subscription and TUN management";
             license = lib.licenses.mit;

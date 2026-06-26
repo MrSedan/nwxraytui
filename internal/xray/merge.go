@@ -6,6 +6,11 @@ import (
 	"runtime"
 )
 
+// TunFwmark is the SO_MARK value applied to sockets created by xray's direct
+// (freedom) outbound when TUN mode is active. A matching ip rule routes those
+// packets via the real interface instead of looping back into tun0.
+const TunFwmark = 255
+
 type tunInboundSpec struct {
 	Tag      string      `json:"tag"`
 	Protocol string      `json:"protocol"`
@@ -77,5 +82,60 @@ func MergeConfig(serverConfig json.RawMessage, mode string) (json.RawMessage, er
 	}
 	cfg["inbounds"] = newInbounds
 
+	// Mark all freedom outbounds so the kernel can route their sockets via the
+	// real interface (via ip rule fwmark) instead of looping back into tun0.
+	var outbounds []json.RawMessage
+	if raw, ok := cfg["outbounds"]; ok {
+		json.Unmarshal(raw, &outbounds)
+	}
+	for i, ob := range outbounds {
+		outbounds[i] = markFreedomOutbound(ob)
+	}
+	if newOutbounds, err := json.Marshal(outbounds); err == nil {
+		cfg["outbounds"] = newOutbounds
+	}
+
 	return json.Marshal(cfg)
+}
+
+// markFreedomOutbound sets sockopt.mark = TunFwmark on freedom-protocol
+// outbounds so Linux policy routing can bypass the TUN interface for direct
+// connections. Non-freedom outbounds are returned unchanged.
+func markFreedomOutbound(ob json.RawMessage) json.RawMessage {
+	var meta struct {
+		Protocol string `json:"protocol"`
+	}
+	if json.Unmarshal(ob, &meta) != nil || meta.Protocol != "freedom" {
+		return ob
+	}
+
+	var m map[string]json.RawMessage
+	if json.Unmarshal(ob, &m) != nil {
+		return ob
+	}
+
+	var ss map[string]json.RawMessage
+	if raw, ok := m["streamSettings"]; ok {
+		json.Unmarshal(raw, &ss)
+	}
+	if ss == nil {
+		ss = make(map[string]json.RawMessage)
+	}
+
+	var sockopt map[string]json.RawMessage
+	if raw, ok := ss["sockopt"]; ok {
+		json.Unmarshal(raw, &sockopt)
+	}
+	if sockopt == nil {
+		sockopt = make(map[string]json.RawMessage)
+	}
+
+	sockopt["mark"] = json.RawMessage(`255`)
+	ssRaw, _ := json.Marshal(sockopt)
+	ss["sockopt"] = ssRaw
+	mRaw, _ := json.Marshal(ss)
+	m["streamSettings"] = mRaw
+
+	result, _ := json.Marshal(m)
+	return result
 }

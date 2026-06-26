@@ -12,33 +12,27 @@ type tunInboundSpec struct {
 	Settings tunSettings `json:"settings"`
 }
 
+// tunSettings mirrors xray-core's proxy/tun Config. That inbound only brings
+// the interface up; it deliberately does NOT assign addresses or configure
+// routing/rules (see its README). Addressing and routing are the OS's job and
+// are handled by the daemon via proxy/routes_*.go.
 type tunSettings struct {
-	Name        string   `json:"name"`
-	Address     []string `json:"address"`
-	MTU         int      `json:"mtu"`
-	AutoRoute   bool     `json:"autoRoute"`
-	StrictRoute bool     `json:"strictRoute"`
+	Name string `json:"name"`
+	MTU  int    `json:"MTU"`
 }
 
 func buildTunInbound() (json.RawMessage, error) {
+	name := "tun0"
+	if runtime.GOOS == "darwin" {
+		name = "utun9"
+	}
 	spec := tunInboundSpec{
 		Tag:      "tun",
 		Protocol: "tun",
 		Settings: tunSettings{
-			Name:        "tun0",
-			Address:     []string{"198.18.0.1/30"},
-			MTU:         1500,
-			AutoRoute:   true,
-			StrictRoute: false,
+			Name: name,
+			MTU:  1500,
 		},
-	}
-	switch runtime.GOOS {
-	case "darwin":
-		spec.Settings.Name = "utun9"
-		spec.Settings.AutoRoute = false
-	case "linux":
-		// daemon manages routes manually via ip(8).
-		spec.Settings.AutoRoute = false
 	}
 	return json.Marshal(spec)
 }

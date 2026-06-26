@@ -21,6 +21,9 @@ type App struct {
 	width      int
 	height     int
 	errMsg     string
+	inputMode  bool
+	inputCmd   string // "add" or "del"
+	inputText  string
 }
 
 func New(client *ipc.Client) *App {
@@ -59,21 +62,54 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.errMsg = msg.err.Error()
 
 	case tea.KeyMsg:
+		if a.inputMode {
+			switch msg.String() {
+			case "enter":
+				if a.inputText != "" {
+					switch a.inputCmd {
+					case "add":
+						cmds = append(cmds, sendCmd(a.client, ipc.CmdAddSub{URL: a.inputText}))
+					case "del":
+						cmds = append(cmds, sendCmd(a.client, ipc.CmdRemoveSub{URL: a.inputText}))
+					}
+				}
+				a.inputMode = false
+				a.inputText = ""
+			case "esc", "ctrl+c":
+				a.inputMode = false
+				a.inputText = ""
+			case "backspace", "ctrl+h":
+				if len(a.inputText) > 0 {
+					a.inputText = a.inputText[:len(a.inputText)-1]
+				}
+			default:
+				if msg.Type == tea.KeyRunes {
+					a.inputText += string(msg.Runes)
+				}
+			}
+			return a, tea.Batch(cmds...)
+		}
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return a, tea.Quit
+		case "a":
+			a.inputMode = true
+			a.inputCmd = "add"
+			a.inputText = ""
+		case "d":
+			a.inputMode = true
+			a.inputCmd = "del"
+			a.inputText = ""
 		case " ":
-			if len(a.serverList.Servers) > 0 {
+			if a.status.Running {
+				cmds = append(cmds, sendCmd(a.client, ipc.CmdStop{}))
+			} else if len(a.serverList.Servers) > 0 {
 				cmds = append(cmds, sendCmd(a.client, ipc.CmdStart{ServerIdx: a.serverList.SelectedIdx(), Mode: a.status.Mode}))
 			}
-		case "s":
-			cmds = append(cmds, sendCmd(a.client, ipc.CmdSwitch{ServerIdx: a.serverList.SelectedIdx(), Mode: "socks"}))
 		case "t":
 			if a.status.TunAvailable {
 				cmds = append(cmds, sendCmd(a.client, ipc.CmdSwitch{ServerIdx: a.serverList.SelectedIdx(), Mode: "tun"}))
 			}
-		case "p":
-			cmds = append(cmds, sendCmd(a.client, ipc.CmdSwitch{ServerIdx: a.serverList.SelectedIdx(), Mode: "system"}))
 		case "r":
 			cmds = append(cmds, sendCmd(a.client, ipc.CmdRefresh{}))
 		}
@@ -129,7 +165,16 @@ func (a *App) View() string {
 	bottom := a.logPanel.View(a.width, botH)
 
 	statusLine := a.renderStatus()
-	helpLine := styles.DimText.Render("[R] Refresh  [A] Add sub  [D] Del sub  [space] Connect  [Q] Quit")
+	var helpLine string
+	if a.inputMode {
+		prompt := "Add subscription URL"
+		if a.inputCmd == "del" {
+			prompt = "Remove subscription URL"
+		}
+		helpLine = styles.DimText.Render(prompt+": ") + a.inputText + "█"
+	} else {
+		helpLine = styles.DimText.Render("[space] Connect/Stop  [T] TUN  [R] Refresh  [A] Add sub  [D] Del sub  [Q] Quit")
+	}
 
 	return top + "\n" + bottom + "\n" + statusLine + "\n" + helpLine
 }

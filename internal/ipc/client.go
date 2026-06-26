@@ -15,7 +15,9 @@ func NewClient(socketPath string) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Client{conn: conn, sc: bufio.NewScanner(conn)}, nil
+	sc := bufio.NewScanner(conn)
+	sc.Buffer(make([]byte, 4*1024*1024), 4*1024*1024)
+	return &Client{conn: conn, sc: sc}, nil
 }
 
 func (c *Client) Send(v any) error {

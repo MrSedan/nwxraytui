@@ -18,14 +18,15 @@ import (
 )
 
 type Daemon struct {
-	cfg          *config.Config
-	runner       *xray.Runner
-	servers      []subscription.Server
-	activeIdx    int
-	mode         string
-	tunAvailable bool
-	clients      []net.Conn
-	mu           sync.RWMutex
+	cfg              *config.Config
+	runner           *xray.Runner
+	servers          []subscription.Server
+	activeIdx        int
+	mode             string
+	activeServerHost string
+	tunAvailable     bool
+	clients          []net.Conn
+	mu               sync.RWMutex
 }
 
 func New(cfg *config.Config, xrayBin string) *Daemon {
@@ -72,6 +73,7 @@ func (d *Daemon) handleConn(conn net.Conn) {
 	d.sendTo(conn, d.statusEvent())
 
 	sc := bufio.NewScanner(conn)
+	sc.Buffer(make([]byte, 4*1024*1024), 4*1024*1024)
 	for sc.Scan() {
 		env, err := ipc.Decode(sc.Bytes())
 		if err != nil {
@@ -134,22 +136,37 @@ func (d *Daemon) connect(idx int, mode string) {
 		return
 	}
 
-	proxy.Set(mode, d.cfg.Proxy.SocksPort, d.cfg.Proxy.HTTPPort)
+	serverHost := xray.ServerHost(srv.Config)
+	if mode == "tun" {
+		if err := proxy.SetTunRoutes(serverHost); err != nil {
+			log.Printf("SetTunRoutes: %v", err)
+		}
+	}
 
 	d.mu.Lock()
 	d.activeIdx = idx
 	d.mode = mode
+	d.activeServerHost = serverHost
 	d.mu.Unlock()
 
 	d.broadcast(d.statusEvent())
 }
 
 func (d *Daemon) disconnect() {
+	d.mu.RLock()
+	mode := d.mode
+	serverHost := d.activeServerHost
+	d.mu.RUnlock()
+
 	d.runner.Stop()
-	proxy.Unset()
+
+	if mode == "tun" {
+		proxy.UnsetTunRoutes(serverHost)
+	}
 
 	d.mu.Lock()
 	d.activeIdx = -1
+	d.activeServerHost = ""
 	d.mu.Unlock()
 
 	d.broadcast(d.statusEvent())

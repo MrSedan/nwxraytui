@@ -3,19 +3,42 @@ package xray
 import (
 	"encoding/json"
 	"fmt"
+	"runtime"
 )
 
-var tunInbound = json.RawMessage(`{
-	"tag": "tun",
-	"protocol": "tun",
-	"settings": {
-		"name": "tun0",
-		"address": ["198.18.0.1/30"],
-		"mtu": 9000,
-		"autoRoute": true,
-		"strictRoute": false
+type tunInboundSpec struct {
+	Tag      string      `json:"tag"`
+	Protocol string      `json:"protocol"`
+	Settings tunSettings `json:"settings"`
+}
+
+type tunSettings struct {
+	Name        string   `json:"name"`
+	Address     []string `json:"address"`
+	MTU         int      `json:"mtu"`
+	AutoRoute   bool     `json:"autoRoute"`
+	StrictRoute bool     `json:"strictRoute"`
+}
+
+func buildTunInbound() (json.RawMessage, error) {
+	spec := tunInboundSpec{
+		Tag:      "tun",
+		Protocol: "tun",
+		Settings: tunSettings{
+			Name:        "tun0",
+			Address:     []string{"198.18.0.1/30"},
+			MTU:         9000,
+			AutoRoute:   true,
+			StrictRoute: false,
+		},
 	}
-}`)
+	if runtime.GOOS == "darwin" {
+		spec.Settings.Name = "utun9"
+		// autoRoute doesn't work on macOS; daemon manages routes manually.
+		spec.Settings.AutoRoute = false
+	}
+	return json.Marshal(spec)
+}
 
 func MergeConfig(serverConfig json.RawMessage, mode string) (json.RawMessage, error) {
 	if mode != "tun" {
@@ -44,7 +67,12 @@ func MergeConfig(serverConfig json.RawMessage, mode string) (json.RawMessage, er
 			filtered = append(filtered, ib)
 		}
 	}
-	filtered = append(filtered, tunInbound)
+
+	tun, err := buildTunInbound()
+	if err != nil {
+		return nil, fmt.Errorf("MergeConfig: build tun inbound: %w", err)
+	}
+	filtered = append(filtered, tun)
 
 	newInbounds, err := json.Marshal(filtered)
 	if err != nil {

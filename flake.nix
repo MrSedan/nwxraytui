@@ -6,13 +6,15 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = {
-    self,
-    nixpkgs,
-    flake-utils,
-  }:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+    }:
     flake-utils.lib.eachDefaultSystem (
-      system: let
+      system:
+      let
         pkgs = nixpkgs.legacyPackages.${system};
         inherit (pkgs) lib;
 
@@ -20,17 +22,20 @@
         isDarwin = lib.hasSuffix "-darwin" system;
 
         linuxDeps = lib.optionals isLinux (
-          with pkgs; [
+          with pkgs;
+          [
             iproute2
             iptables
             nftables
           ]
         );
-        darwinDeps = lib.optionals isDarwin [];
-      in {
+        darwinDeps = lib.optionals isDarwin [ ];
+      in
+      {
         devShells.default = pkgs.mkShell {
           name = "nwxraytui";
-          packages = with pkgs;
+          packages =
+            with pkgs;
             [
               go
               gopls
@@ -62,17 +67,15 @@
           postInstall = ''
             wrapProgram $out/bin/nwxraytui \
               --prefix PATH : ${
-              lib.makeBinPath [
-                pkgs.xray
-                pkgs.iproute2
-                pkgs.iptables
-                pkgs.nftables
-              ]
-            }
-          '';
-          preCheck = ''
-            export HOME=$TMPDIR
-            	mkdir -p $HOME/.config/nwxraytui
+                lib.makeBinPath (
+                  [
+                    pkgs.xray
+                    pkgs.git
+                  ]
+                  ++ linuxDeps
+                  ++ darwinDeps
+                )
+              }
           '';
           meta = {
             description = "TUI for xray subscription and TUN management";

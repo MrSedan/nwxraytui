@@ -25,19 +25,19 @@ func main() {
 	}
 
 	if *isDaemon {
-		runDaemon(cfg)
+		runDaemon(cfg, cfgPath)
 		return
 	}
 	runTUI(cfg)
 }
 
-func runDaemon(cfg *config.Config) {
+func runDaemon(cfg *config.Config, cfgPath string) {
 	xrayBin, err := exec.LookPath("xray")
 	if err != nil {
 		log.Fatalf("xray not found in PATH: %v", err)
 	}
 	sock := config.SocketPath()
-	d := daemon.New(cfg, xrayBin)
+	d := daemon.New(cfg, xrayBin, cfgPath)
 	if err := d.Run(sock); err != nil {
 		log.Fatalf("daemon: %v", err)
 	}

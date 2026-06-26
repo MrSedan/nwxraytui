@@ -18,6 +18,14 @@ const tunIface = "tun0"
 // it here: source-address selection and on-link routing need it.
 const tunAddr = "198.18.0.1/30"
 
+// tunFwmark is the SO_MARK value set on xray's freedom-outbound sockets (see
+// xray.TunFwmark). The matching ip rule below sends those packets through the
+// real interface rather than back into tun0.
+const tunFwmark = 255
+
+// tunRouteTable is the auxiliary routing table used for fwmark bypass.
+const tunRouteTable = "100"
+
 // localBypass are networks kept off the tunnel: loopback, private LANs,
 // link-local, CGNAT and multicast. They are routed via the real gateway so
 // LAN hosts, the router (and any DNS it serves) stay reachable.
@@ -69,6 +77,19 @@ func SetTunRoutes(serverHost string) error {
 		}
 	}
 
+	// Policy routing rule: packets marked by xray's direct outbound bypass tun0
+	// and are forwarded via the real interface using table tunRouteTable.
+	if out, err := exec.Command("ip", "route", "add", "default", "via", gw, "dev", dev, "table", tunRouteTable).CombinedOutput(); err != nil {
+		if !strings.Contains(string(out), "File exists") {
+			log.Printf("routes: fwmark table default: %v: %s", err, out)
+		}
+	}
+	if out, err := exec.Command("ip", "rule", "add", "fwmark", fmt.Sprintf("%d", tunFwmark), "table", tunRouteTable, "priority", "100").CombinedOutput(); err != nil {
+		if !strings.Contains(string(out), "File exists") {
+			log.Printf("routes: fwmark rule: %v: %s", err, out)
+		}
+	}
+
 	if out, err := exec.Command("ip", "route", "add", "0.0.0.0/1", "dev", tunIface).CombinedOutput(); err != nil {
 		return fmt.Errorf("route 0/1: %w: %s", err, out)
 	}
@@ -91,6 +112,8 @@ func UnsetTunRoutes(serverHost string) {
 			exec.Command("ip", "route", "del", ip+"/32").Run()
 		}
 	}
+	exec.Command("ip", "rule", "del", "fwmark", fmt.Sprintf("%d", tunFwmark), "table", tunRouteTable).Run()
+	exec.Command("ip", "route", "flush", "table", tunRouteTable).Run()
 	log.Printf("routes: TUN routes removed")
 }
 

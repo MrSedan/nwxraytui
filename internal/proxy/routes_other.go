@@ -2,5 +2,5 @@
 
 package proxy
 
-func SetTunRoutes(serverHost string) error { return nil }
-func UnsetTunRoutes(serverHost string)     {}
+func SetTunRoutes(serverHost, _ string) error { return nil }
+func UnsetTunRoutes(serverHost string)         {}

@@ -13,7 +13,7 @@ import (
 
 const tunIface = "utun9"
 
-func SetTunRoutes(serverHost string) error {
+func SetTunRoutes(serverHost, _ string) error {
 	if err := waitForIface(tunIface, 5*time.Second); err != nil {
 		return err
 	}

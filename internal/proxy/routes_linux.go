@@ -1,0 +1,101 @@
+//go:build linux
+
+package proxy
+
+import (
+	"fmt"
+	"log"
+	"net"
+	"os/exec"
+	"strings"
+	"time"
+)
+
+const tunIface = "tun0"
+
+func SetTunRoutes(serverHost string) error {
+	if err := waitForIface(tunIface, 5*time.Second); err != nil {
+		return err
+	}
+	gw, dev, err := defaultGateway()
+	if err != nil {
+		return fmt.Errorf("default gateway: %w", err)
+	}
+	log.Printf("routes: gateway %s dev %s, adding routes via %s", gw, dev, tunIface)
+
+	if serverHost != "" {
+		ip, err := resolveToIP(serverHost)
+		if err != nil {
+			log.Printf("routes: cannot resolve %s for bypass: %v", serverHost, err)
+		} else {
+			out, err := exec.Command("ip", "route", "add", ip+"/32", "via", gw, "dev", dev).CombinedOutput()
+			if err != nil {
+				log.Printf("routes: bypass %s via %s: %v: %s", ip, gw, err, out)
+			}
+		}
+	}
+
+	if out, err := exec.Command("ip", "route", "add", "0.0.0.0/1", "dev", tunIface).CombinedOutput(); err != nil {
+		return fmt.Errorf("route 0/1: %w: %s", err, out)
+	}
+	if out, err := exec.Command("ip", "route", "add", "128.0.0.0/1", "dev", tunIface).CombinedOutput(); err != nil {
+		exec.Command("ip", "route", "del", "0.0.0.0/1").Run()
+		return fmt.Errorf("route 128/1: %w: %s", err, out)
+	}
+	log.Printf("routes: 0/1 and 128/1 via %s", tunIface)
+	return nil
+}
+
+func UnsetTunRoutes(serverHost string) {
+	exec.Command("ip", "route", "del", "0.0.0.0/1", "dev", tunIface).Run()
+	exec.Command("ip", "route", "del", "128.0.0.0/1", "dev", tunIface).Run()
+	if serverHost != "" {
+		if ip, err := resolveToIP(serverHost); err == nil {
+			exec.Command("ip", "route", "del", ip+"/32").Run()
+		}
+	}
+	log.Printf("routes: TUN routes removed")
+}
+
+func resolveToIP(host string) (string, error) {
+	if net.ParseIP(host) != nil {
+		return host, nil
+	}
+	addrs, err := net.LookupHost(host)
+	if err != nil || len(addrs) == 0 {
+		return "", fmt.Errorf("lookup %s: %w", host, err)
+	}
+	return addrs[0], nil
+}
+
+func waitForIface(name string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if exec.Command("ip", "link", "show", name).Run() == nil {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("interface %s did not appear within %v", name, timeout)
+}
+
+func defaultGateway() (gw, dev string, err error) {
+	out, err := exec.Command("ip", "route", "show", "default").Output()
+	if err != nil {
+		return "", "", err
+	}
+	// "default via 192.168.1.1 dev eth0 proto dhcp ..."
+	fields := strings.Fields(string(out))
+	for i, f := range fields {
+		if f == "via" && i+1 < len(fields) {
+			gw = fields[i+1]
+		}
+		if f == "dev" && i+1 < len(fields) {
+			dev = fields[i+1]
+		}
+	}
+	if gw == "" {
+		return "", "", fmt.Errorf("no default gateway in: %s", strings.TrimSpace(string(out)))
+	}
+	return gw, dev, nil
+}

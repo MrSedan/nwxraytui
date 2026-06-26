@@ -32,9 +32,12 @@ func buildTunInbound() (json.RawMessage, error) {
 			StrictRoute: false,
 		},
 	}
-	if runtime.GOOS == "darwin" {
+	switch runtime.GOOS {
+	case "darwin":
 		spec.Settings.Name = "utun9"
-		// autoRoute doesn't work on macOS; daemon manages routes manually.
+		spec.Settings.AutoRoute = false
+	case "linux":
+		// daemon manages routes manually via ip(8).
 		spec.Settings.AutoRoute = false
 	}
 	return json.Marshal(spec)

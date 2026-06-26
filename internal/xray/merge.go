@@ -27,7 +27,7 @@ func buildTunInbound() (json.RawMessage, error) {
 		Settings: tunSettings{
 			Name:        "tun0",
 			Address:     []string{"198.18.0.1/30"},
-			MTU:         9000,
+			MTU:         1500,
 			AutoRoute:   true,
 			StrictRoute: false,
 		},

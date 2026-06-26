@@ -13,6 +13,18 @@ import (
 
 const tunIface = "tun0"
 
+// localBypass are networks kept off the tunnel: loopback, private LANs,
+// link-local, CGNAT and multicast. They are routed via the real gateway so
+// LAN hosts, the router (and any DNS it serves) stay reachable.
+var localBypass = []string{
+	"10.0.0.0/8",
+	"172.16.0.0/12",
+	"192.168.0.0/16",
+	"169.254.0.0/16",
+	"100.64.0.0/10",
+	"224.0.0.0/4",
+}
+
 func SetTunRoutes(serverHost string) error {
 	if err := waitForIface(tunIface, 5*time.Second); err != nil {
 		return err
@@ -35,6 +47,12 @@ func SetTunRoutes(serverHost string) error {
 		}
 	}
 
+	for _, cidr := range localBypass {
+		if out, err := exec.Command("ip", "route", "add", cidr, "via", gw, "dev", dev).CombinedOutput(); err != nil {
+			log.Printf("routes: bypass %s via %s: %v: %s", cidr, gw, err, out)
+		}
+	}
+
 	if out, err := exec.Command("ip", "route", "add", "0.0.0.0/1", "dev", tunIface).CombinedOutput(); err != nil {
 		return fmt.Errorf("route 0/1: %w: %s", err, out)
 	}
@@ -49,6 +67,9 @@ func SetTunRoutes(serverHost string) error {
 func UnsetTunRoutes(serverHost string) {
 	exec.Command("ip", "route", "del", "0.0.0.0/1", "dev", tunIface).Run()
 	exec.Command("ip", "route", "del", "128.0.0.0/1", "dev", tunIface).Run()
+	for _, cidr := range localBypass {
+		exec.Command("ip", "route", "del", cidr).Run()
+	}
 	if serverHost != "" {
 		if ip, err := resolveToIP(serverHost); err == nil {
 			exec.Command("ip", "route", "del", ip+"/32").Run()

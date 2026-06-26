@@ -109,22 +109,23 @@ func setDNS(dnsServer string) {
 	if target == "" {
 		target = dnsFallback
 	}
-	// resolvconf -a tun0 -m 0 -x: highest priority, exclusive (overrides DHCP DNS)
-	cmd := exec.Command("resolvconf", "-a", tunIface, "-m", "0", "-x")
-	cmd.Stdin = strings.NewReader("nameserver " + target + "\n")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		log.Printf("dns: resolvconf -a: %v: %s", err, out)
+	if out, err := exec.Command("resolvectl", "dns", tunIface, target).CombinedOutput(); err != nil {
+		log.Printf("dns: resolvectl dns: %v: %s", err, out)
 		return
 	}
-	log.Printf("dns: set %s via resolvconf for %s", target, tunIface)
+	// "~." makes tun0 the default resolver for all domains.
+	if out, err := exec.Command("resolvectl", "domain", tunIface, "~.").CombinedOutput(); err != nil {
+		log.Printf("dns: resolvectl domain: %v: %s", err, out)
+	}
+	log.Printf("dns: set %s via resolvectl for %s", target, tunIface)
 }
 
 func unsetDNS() {
-	if out, err := exec.Command("resolvconf", "-d", tunIface, "-f").CombinedOutput(); err != nil {
-		log.Printf("dns: resolvconf -d: %v: %s", err, out)
+	if out, err := exec.Command("resolvectl", "revert", tunIface).CombinedOutput(); err != nil {
+		log.Printf("dns: resolvectl revert: %v: %s", err, out)
 		return
 	}
-	log.Printf("dns: removed resolvconf entry for %s", tunIface)
+	log.Printf("dns: reverted resolvectl for %s", tunIface)
 }
 
 func UnsetTunRoutes(serverHost string) {

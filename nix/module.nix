@@ -14,6 +14,11 @@ in {
       '';
     };
 
+    user = lib.mkOption {
+      type = lib.types.str;
+      description = "User account to run the nwxraytui daemon as.";
+    };
+
     package = lib.mkOption {
       type = lib.types.package;
       default = pkgs.nwxraytui;
@@ -22,15 +27,19 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
-    systemd.user.services.nwxraytui = {
+    systemd.services.nwxraytui = {
       description = "nwxraytui proxy daemon";
       after = [ "network.target" ];
-      wantedBy = [ "default.target" ];
+      wantedBy = [ "multi-user.target" ];
 
       serviceConfig = {
+        # Create /run/user/%U/nwxraytui as root before dropping to User=;
+        # required because /run/user/{uid}/ may not exist at boot.
+        ExecStartPre = "+${pkgs.coreutils}/bin/install -d -m 0700 -o %u -g %g /run/user/%U /run/user/%U/nwxraytui";
         ExecStart = "${cfg.package}/bin/nwxraytui --daemon";
         Restart = "on-failure";
         RestartSec = "5s";
+        User = cfg.user;
       } // lib.optionalAttrs cfg.enableTun {
         AmbientCapabilities = [ "CAP_NET_ADMIN" ];
         CapabilityBoundingSet = [ "CAP_NET_ADMIN" ];

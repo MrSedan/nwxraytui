@@ -17,7 +17,7 @@ func TestDaemon_ConnectAndStatus(t *testing.T) {
 	cfg.Proxy.HTTPPort = 10809
 	cfg.Proxy.Mode = "socks"
 
-	d := daemon.New(cfg, "/bin/false")
+	d := daemon.New(cfg, "/bin/false", "")
 	go d.Run(sock)
 	time.Sleep(100 * time.Millisecond)
 

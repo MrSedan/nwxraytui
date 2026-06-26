@@ -21,6 +21,7 @@ import (
 
 type Daemon struct {
 	cfg              *config.Config
+	cfgPath          string
 	runner           *xray.Runner
 	servers          []subscription.Server
 	activeIdx        int
@@ -31,9 +32,10 @@ type Daemon struct {
 	mu               sync.RWMutex
 }
 
-func New(cfg *config.Config, xrayBin string) *Daemon {
+func New(cfg *config.Config, xrayBin string, cfgPath string) *Daemon {
 	d := &Daemon{
 		cfg:          cfg,
+		cfgPath:      cfgPath,
 		runner:       xray.NewRunner(xrayBin),
 		activeIdx:    -1,
 		mode:         cfg.Proxy.Mode,
@@ -114,10 +116,19 @@ func (d *Daemon) handleEnvelope(env ipc.Envelope) {
 		d.cfg.Daemon.Autostart = cmd.Enabled
 	case ipc.TypeCmdAddSub:
 		cmd, _ := ipc.UnmarshalPayload[ipc.CmdAddSub](env)
+		d.mu.Lock()
 		d.cfg.Subscriptions.URLs = append(d.cfg.Subscriptions.URLs, cmd.URL)
+		d.mu.Unlock()
+		if err := config.Save(d.cfg, d.cfgPath); err != nil {
+			log.Printf("save config: %v", err)
+		}
+		go d.refresh()
 	case ipc.TypeCmdRemoveSub:
 		cmd, _ := ipc.UnmarshalPayload[ipc.CmdRemoveSub](env)
 		d.removeSub(cmd.URL)
+		if err := config.Save(d.cfg, d.cfgPath); err != nil {
+			log.Printf("save config: %v", err)
+		}
 	}
 }
 

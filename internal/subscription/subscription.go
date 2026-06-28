@@ -19,6 +19,7 @@ type Server struct {
 
 type Meta struct {
 	Title          string
+	Announce       string
 	Upload         int64
 	Download       int64
 	Total          int64
@@ -93,6 +94,16 @@ func parseMeta(h http.Header) Meta {
 	if pi := h.Get("profile-update-interval"); pi != "" {
 		if v, err := strconv.Atoi(pi); err == nil {
 			m.UpdateInterval = v
+		}
+	}
+	if ann := h.Get("announce"); ann != "" {
+		if strings.HasPrefix(ann, "base64:") {
+			decoded, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(ann, "base64:"))
+			if err == nil {
+				m.Announce = string(decoded)
+			}
+		} else {
+			m.Announce = ann
 		}
 	}
 	return m

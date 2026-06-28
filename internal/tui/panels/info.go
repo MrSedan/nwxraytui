@@ -66,6 +66,10 @@ func (m InfoPanel) View(width, height int) string {
 		if m.Group.Meta.UpdateInterval > 0 {
 			sb.WriteString(fmt.Sprintf("Auto-refresh: %dh\n", m.Group.Meta.UpdateInterval))
 		}
+
+		if m.Group.Meta.Announce != "" {
+			sb.WriteString("\n" + m.Group.Meta.Announce + "\n")
+		}
 	}
 
 	sb.WriteString("\n")

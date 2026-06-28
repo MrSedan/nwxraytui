@@ -254,6 +254,7 @@ func (d *Daemon) toIPCGroups() []ipc.SubscriptionGroup {
 			URL: g.URL,
 			Meta: ipc.SubscriptionMeta{
 				Title:          g.Meta.Title,
+				Announce:       g.Meta.Announce,
 				Upload:         g.Meta.Upload,
 				Download:       g.Meta.Download,
 				Total:          g.Meta.Total,

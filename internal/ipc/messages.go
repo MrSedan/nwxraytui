@@ -84,6 +84,7 @@ type EventLog struct {
 
 type SubscriptionMeta struct {
 	Title          string `json:"title"`
+	Announce       string `json:"announce,omitempty"`
 	Upload         int64  `json:"upload"`
 	Download       int64  `json:"download"`
 	Total          int64  `json:"total"`

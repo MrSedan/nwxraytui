@@ -115,6 +115,8 @@ func (d *Daemon) handleEnvelope(env ipc.Envelope) {
 		d.connect(cmd.ServerIdx, cmd.Mode)
 	case ipc.TypeCmdRefresh:
 		go d.refresh()
+	case ipc.TypeCmdPing:
+		go d.pingAll()
 	case ipc.TypeCmdSetAutostart:
 		cmd, _ := ipc.UnmarshalPayload[ipc.CmdSetAutostart](env)
 		d.cfg.Daemon.Autostart = cmd.Enabled

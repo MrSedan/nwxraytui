@@ -186,6 +186,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				a.tunMode = !a.tunMode
 			}
+		case "p":
+			cmds = append(cmds, sendCmd(a.client, ipc.CmdPing{}))
 		case "r":
 			if !a.spinning {
 				cmds = append(cmds, tickSpinner())
@@ -289,7 +291,7 @@ func (a *App) View() string {
 		}
 		helpLine = styles.DimText.Render(prompt+": ") + a.inputText + "█"
 	} else {
-		helpLine = styles.DimText.Render("←→ Tab  ↑↓ Srv  [Space] Connect  [S] Stop  [T] TUN  [R] Refresh  [Enter] Details  [A/D] Sub  [Q] Quit")
+		helpLine = styles.DimText.Render("←→ Tab  ↑↓ Srv  [Space] Connect  [S] Stop  [T] TUN  [R] Refresh  [P] Ping  [Enter] Details  [A/D] Sub  [Q] Quit")
 	}
 
 	return tabBar + "\n" + mainRow + "\n" + bottom + "\n" + statusLine + "\n" + helpLine

@@ -13,6 +13,7 @@ const (
 	TypeCmdSwitch       MsgType = "CmdSwitch"
 	TypeCmdRefresh      MsgType = "CmdRefresh"
 	TypeCmdSetAutostart MsgType = "CmdSetAutostart"
+	TypeCmdPing         MsgType = "CmdPing"
 	TypeCmdAddSub       MsgType = "CmdAddSub"
 	TypeCmdRemoveSub    MsgType = "CmdRemoveSub"
 	TypeEventStatus          MsgType = "EventStatus"
@@ -40,6 +41,8 @@ type CmdSwitch struct {
 }
 
 type CmdRefresh struct{}
+
+type CmdPing struct{}
 
 type CmdSetAutostart struct {
 	Enabled bool `json:"enabled"`

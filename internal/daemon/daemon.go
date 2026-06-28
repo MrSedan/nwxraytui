@@ -23,7 +23,7 @@ type Daemon struct {
 	cfg              *config.Config
 	cfgPath          string
 	runner           *xray.Runner
-	servers          []subscription.Server
+	groups           []subscription.Group
 	activeIdx        int
 	mode             string
 	activeServerHost string
@@ -41,10 +41,9 @@ func New(cfg *config.Config, xrayBin string, cfgPath string) *Daemon {
 		mode:         cfg.Proxy.Mode,
 		tunAvailable: proxy.HasTunCapability(),
 	}
-	// Load cached servers as fallback if subscription fetch fails later.
-	cachePath := filepath.Join(config.CacheDir(), "servers.json")
-	if cached, err := subscription.LoadCachedServers(cachePath); err == nil && len(cached) > 0 {
-		d.servers = cached
+	cachePath := filepath.Join(config.CacheDir(), "groups.json")
+	if cached, err := subscription.LoadCachedGroups(cachePath); err == nil && len(cached) > 0 {
+		d.groups = cached
 	}
 	return d
 }
@@ -58,8 +57,6 @@ func (d *Daemon) Run(socketPath string) error {
 
 	go d.forwardLogs()
 
-	// Clean up xray and TUN routes on termination so the network is not
-	// left broken when the daemon is killed or the service is stopped.
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
@@ -86,6 +83,12 @@ func (d *Daemon) handleConn(conn net.Conn) {
 	}()
 
 	d.sendTo(conn, d.statusEvent())
+	d.mu.RLock()
+	groups := d.toIPCGroups()
+	d.mu.RUnlock()
+	if len(groups) > 0 {
+		d.sendTo(conn, ipc.EventSubscriptionList{Groups: groups})
+	}
 
 	sc := bufio.NewScanner(conn)
 	sc.Buffer(make([]byte, 4*1024*1024), 4*1024*1024)
@@ -130,14 +133,24 @@ func (d *Daemon) handleEnvelope(env ipc.Envelope) {
 	}
 }
 
+func (d *Daemon) serverAtIdx(idx int) (subscription.Server, bool) {
+	cur := 0
+	for _, g := range d.groups {
+		if idx < cur+len(g.Servers) {
+			return g.Servers[idx-cur], true
+		}
+		cur += len(g.Servers)
+	}
+	return subscription.Server{}, false
+}
+
 func (d *Daemon) connect(idx int, mode string) {
 	d.mu.Lock()
-	if idx < 0 || idx >= len(d.servers) {
-		d.mu.Unlock()
+	srv, ok := d.serverAtIdx(idx)
+	d.mu.Unlock()
+	if !ok {
 		return
 	}
-	srv := d.servers[idx]
-	d.mu.Unlock()
 
 	merged, err := xray.MergeConfig(srv.Config, mode)
 	if err != nil {
@@ -196,75 +209,101 @@ func (d *Daemon) disconnect() {
 
 func (d *Daemon) refresh() {
 	fetcher := subscription.NewFetcher(nil)
-	var all []subscription.Server
+	var groups []subscription.Group
 	for _, url := range d.cfg.Subscriptions.URLs {
-		servers, _, err := fetcher.Fetch(url)
+		servers, meta, err := fetcher.Fetch(url)
 		if err != nil {
 			log.Printf("refresh %s: %v", url, err)
 			continue
 		}
-		all = append(all, servers...)
+		groups = append(groups, subscription.Group{URL: url, Meta: meta, Servers: servers})
 	}
 
-	if len(all) > 0 {
+	if len(groups) > 0 {
 		d.mu.Lock()
-		d.servers = all
+		d.groups = groups
 		d.mu.Unlock()
 
-		// Update cache after successful refresh.
-		cachePath := filepath.Join(config.CacheDir(), "servers.json")
+		cachePath := filepath.Join(config.CacheDir(), "groups.json")
 		os.MkdirAll(config.CacheDir(), 0o700)
-		subscription.CacheServers(all, cachePath)
+		subscription.CacheGroups(groups, cachePath)
 	}
 
 	d.mu.RLock()
-	infos := make([]ipc.ServerInfo, len(d.servers))
-	for i, s := range d.servers {
-		infos[i] = ipc.ServerInfo{Remarks: s.Remarks, Config: s.Config}
-	}
+	ipcGroups := d.toIPCGroups()
 	d.mu.RUnlock()
 
-	d.broadcast(ipc.EventServerList{Servers: infos})
-	go d.pingAll(d.servers)
+	d.broadcast(ipc.EventSubscriptionList{Groups: ipcGroups})
+	go d.pingAll()
 }
 
-func (d *Daemon) pingAll(servers []subscription.Server) {
-	for i, s := range servers {
-		var meta struct {
-			Outbounds []struct {
-				Settings struct {
-					Vnext []struct {
-						Address string `json:"address"`
-						Port    int    `json:"port"`
-					} `json:"vnext"`
-					Servers []struct {
-						Address string `json:"address"`
-						Port    int    `json:"port"`
-					} `json:"servers"`
-				} `json:"settings"`
-			} `json:"outbounds"`
+func (d *Daemon) toIPCGroups() []ipc.SubscriptionGroup {
+	groups := make([]ipc.SubscriptionGroup, len(d.groups))
+	for i, g := range d.groups {
+		servers := make([]ipc.ServerInfo, len(g.Servers))
+		for j, s := range g.Servers {
+			servers[j] = ipc.ServerInfo{Remarks: s.Remarks, Config: s.Config}
 		}
-		if err := json.Unmarshal(s.Config, &meta); err != nil {
-			continue
+		groups[i] = ipc.SubscriptionGroup{
+			URL: g.URL,
+			Meta: ipc.SubscriptionMeta{
+				Title:          g.Meta.Title,
+				Upload:         g.Meta.Upload,
+				Download:       g.Meta.Download,
+				Total:          g.Meta.Total,
+				Expire:         g.Meta.Expire,
+				UpdateInterval: g.Meta.UpdateInterval,
+			},
+			Servers: servers,
 		}
-		host, port := "", 0
-		for _, ob := range meta.Outbounds {
-			if len(ob.Settings.Vnext) > 0 {
-				host = ob.Settings.Vnext[0].Address
-				port = ob.Settings.Vnext[0].Port
-				break
+	}
+	return groups
+}
+
+func (d *Daemon) pingAll() {
+	d.mu.RLock()
+	groups := make([]subscription.Group, len(d.groups))
+	copy(groups, d.groups)
+	d.mu.RUnlock()
+
+	abs := 0
+	for _, g := range groups {
+		for _, s := range g.Servers {
+			var meta struct {
+				Outbounds []struct {
+					Settings struct {
+						Vnext []struct {
+							Address string `json:"address"`
+							Port    int    `json:"port"`
+						} `json:"vnext"`
+						Servers []struct {
+							Address string `json:"address"`
+							Port    int    `json:"port"`
+						} `json:"servers"`
+					} `json:"settings"`
+				} `json:"outbounds"`
 			}
-			if len(ob.Settings.Servers) > 0 {
-				host = ob.Settings.Servers[0].Address
-				port = ob.Settings.Servers[0].Port
-				break
+			host, port := "", 0
+			if err := json.Unmarshal(s.Config, &meta); err == nil {
+				for _, ob := range meta.Outbounds {
+					if len(ob.Settings.Vnext) > 0 {
+						host = ob.Settings.Vnext[0].Address
+						port = ob.Settings.Vnext[0].Port
+						break
+					}
+					if len(ob.Settings.Servers) > 0 {
+						host = ob.Settings.Servers[0].Address
+						port = ob.Settings.Servers[0].Port
+						break
+					}
+				}
 			}
+			if host != "" {
+				ms := latency.Ping(host, port, 3e9)
+				d.broadcast(ipc.EventLatency{ServerIdx: abs, Ms: ms})
+			}
+			abs++
 		}
-		if host == "" {
-			continue
-		}
-		ms := latency.Ping(host, port, 3e9)
-		d.broadcast(ipc.EventLatency{ServerIdx: i, Ms: ms})
 	}
 }
 

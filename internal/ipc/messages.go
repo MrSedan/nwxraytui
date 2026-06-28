@@ -15,10 +15,11 @@ const (
 	TypeCmdSetAutostart MsgType = "CmdSetAutostart"
 	TypeCmdAddSub       MsgType = "CmdAddSub"
 	TypeCmdRemoveSub    MsgType = "CmdRemoveSub"
-	TypeEventStatus     MsgType = "EventStatus"
-	TypeEventServerList MsgType = "EventServerList"
-	TypeEventLatency    MsgType = "EventLatency"
-	TypeEventLog        MsgType = "EventLog"
+	TypeEventStatus          MsgType = "EventStatus"
+	TypeEventServerList      MsgType = "EventServerList"
+	TypeEventLatency         MsgType = "EventLatency"
+	TypeEventLog             MsgType = "EventLog"
+	TypeEventSubscriptionList MsgType = "EventSubscriptionList"
 )
 
 type Envelope struct {
@@ -76,6 +77,25 @@ type EventLatency struct {
 
 type EventLog struct {
 	Line string `json:"line"`
+}
+
+type SubscriptionMeta struct {
+	Title          string `json:"title"`
+	Upload         int64  `json:"upload"`
+	Download       int64  `json:"download"`
+	Total          int64  `json:"total"`
+	Expire         int64  `json:"expire"`
+	UpdateInterval int    `json:"updateInterval"`
+}
+
+type SubscriptionGroup struct {
+	URL     string           `json:"url"`
+	Meta    SubscriptionMeta `json:"meta"`
+	Servers []ServerInfo     `json:"servers"`
+}
+
+type EventSubscriptionList struct {
+	Groups []SubscriptionGroup `json:"groups"`
 }
 
 func Encode(v any) ([]byte, error) {

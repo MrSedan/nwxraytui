@@ -1,6 +1,7 @@
 package ipc_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/mrsedan/nwxraytui/internal/ipc"
@@ -44,5 +45,47 @@ func TestEncodeDecode_EventStatus(t *testing.T) {
 	}
 	if !got.Running || got.Mode != "socks" || got.ServerIdx != 1 {
 		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestEventSubscriptionList_RoundTrip(t *testing.T) {
+	ev := ipc.EventSubscriptionList{
+		Groups: []ipc.SubscriptionGroup{
+			{
+				URL: "https://example.com/sub",
+				Meta: ipc.SubscriptionMeta{
+					Title:          "VPN Pro",
+					Upload:         1024,
+					Download:       2048,
+					Total:          10737418240,
+					Expire:         1785600000,
+					UpdateInterval: 24,
+				},
+				Servers: []ipc.ServerInfo{
+					{Remarks: "Server A", Config: json.RawMessage(`{}`)},
+				},
+			},
+		},
+	}
+	data, err := ipc.Encode(ev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, err := ipc.Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.Type != ipc.TypeEventSubscriptionList {
+		t.Fatalf("got type %q, want %q", env.Type, ipc.TypeEventSubscriptionList)
+	}
+	got, err := ipc.UnmarshalPayload[ipc.EventSubscriptionList](env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Groups) != 1 || got.Groups[0].Meta.Title != "VPN Pro" {
+		t.Fatalf("unexpected: %+v", got.Groups)
+	}
+	if got.Groups[0].Meta.Total != 10737418240 {
+		t.Fatalf("total mismatch: got %d", got.Groups[0].Meta.Total)
 	}
 }

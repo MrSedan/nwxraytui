@@ -134,6 +134,9 @@ func (d *Daemon) handleEnvelope(env ipc.Envelope) {
 }
 
 func (d *Daemon) serverAtIdx(idx int) (subscription.Server, bool) {
+	if idx < 0 {
+		return subscription.Server{}, false
+	}
 	cur := 0
 	for _, g := range d.groups {
 		if idx < cur+len(g.Servers) {

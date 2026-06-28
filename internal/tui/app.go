@@ -139,9 +139,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}))
 			}
 		case "r":
+			if !a.spinning {
+				cmds = append(cmds, tickSpinner())
+			}
 			a.spinning = true
 			a.info.Refreshing = true
-			cmds = append(cmds, tickSpinner())
 			cmds = append(cmds, sendCmd(a.client, ipc.CmdRefresh{}))
 		case "enter":
 			a.showDetails = !a.showDetails

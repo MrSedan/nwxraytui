@@ -56,6 +56,7 @@ func (d *Daemon) Run(socketPath string) error {
 	defer srv.Close()
 
 	go d.forwardLogs()
+	go d.autostart()
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
@@ -315,6 +316,27 @@ func (d *Daemon) pingAll() {
 			abs++
 		}
 	}
+}
+
+func (d *Daemon) autostart() {
+	state, err := config.LoadState()
+	if err != nil || state.LastServerIdx < 0 {
+		return
+	}
+	d.mu.RLock()
+	hasGroups := len(d.groups) > 0
+	d.mu.RUnlock()
+	if !hasGroups {
+		return
+	}
+	if _, ok := d.serverAtIdx(state.LastServerIdx); !ok {
+		return
+	}
+	mode := d.cfg.Proxy.Mode
+	if mode == "tun" || mode == "" {
+		mode = "socks"
+	}
+	d.connect(state.LastServerIdx, mode)
 }
 
 func (d *Daemon) removeSub(url string) {

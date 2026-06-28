@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mrsedan/nwxraytui/internal/config"
 	"github.com/mrsedan/nwxraytui/internal/ipc"
 	"github.com/mrsedan/nwxraytui/internal/tui/panels"
 	"github.com/mrsedan/nwxraytui/internal/tui/styles"
@@ -16,29 +17,36 @@ type ipcErrMsg struct{ err error }
 type spinTickMsg struct{}
 
 type App struct {
-	client      *ipc.Client
-	tabs        panels.TabsPanel
-	info        panels.InfoPanel
-	detail      panels.DetailPanel
-	logPanel    panels.LogPanel
-	status      ipc.EventStatus
-	width       int
-	height      int
-	errMsg      string
-	inputMode   bool
-	inputCmd    string
-	inputText   string
-	proxyMode   string
-	showDetails bool
-	spinning    bool
+	client           *ipc.Client
+	tabs             panels.TabsPanel
+	info             panels.InfoPanel
+	detail           panels.DetailPanel
+	logPanel         panels.LogPanel
+	status           ipc.EventStatus
+	width            int
+	height           int
+	errMsg           string
+	inputMode        bool
+	inputCmd         string
+	inputText        string
+	proxyMode        string
+	tunMode          bool
+	lastServerName   string
+	initialCursorSet bool
+	showDetails      bool
+	spinning         bool
 }
 
 func New(client *ipc.Client) *App {
-	return &App{
+	a := &App{
 		client:    client,
 		tabs:      panels.NewTabsPanel(),
 		proxyMode: "socks",
 	}
+	if state, err := config.LoadState(); err == nil {
+		a.lastServerName = state.LastServerName
+	}
+	return a
 }
 
 func (a *App) Start() error {
@@ -55,6 +63,28 @@ func (a *App) Init() tea.Cmd {
 		sendCmd(a.client, ipc.CmdRefresh{}),
 		tickSpinner(),
 	)
+}
+
+func (a *App) currentMode() string {
+	if a.tunMode && a.status.TunAvailable {
+		return "tun"
+	}
+	return a.proxyMode
+}
+
+func (a *App) saveState() {
+	idx := a.tabs.SelectedAbsIdx()
+	if idx < 0 {
+		return
+	}
+	name := ""
+	if s := a.tabs.SelectedServer(); s != nil {
+		name = s.Remarks
+	}
+	_ = config.SaveState(&config.State{
+		LastServerIdx:  idx,
+		LastServerName: name,
+	})
 }
 
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -119,24 +149,42 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.inputCmd = "del"
 			a.inputText = ""
 		case " ":
+			if idx := a.tabs.SelectedAbsIdx(); idx >= 0 {
+				if a.status.Running {
+					cmds = append(cmds, sendCmd(a.client, ipc.CmdSwitch{
+						ServerIdx: idx,
+						Mode:      a.currentMode(),
+					}))
+				} else {
+					cmds = append(cmds, sendCmd(a.client, ipc.CmdStart{
+						ServerIdx: idx,
+						Mode:      a.currentMode(),
+					}))
+				}
+				a.saveState()
+			}
+		case "s":
 			if a.status.Running {
 				cmds = append(cmds, sendCmd(a.client, ipc.CmdStop{}))
-			} else if a.tabs.SelectedAbsIdx() >= 0 {
-				cmds = append(cmds, sendCmd(a.client, ipc.CmdStart{
-					ServerIdx: a.tabs.SelectedAbsIdx(),
-					Mode:      a.status.Mode,
-				}))
 			}
 		case "t":
-			if a.status.TunAvailable {
-				mode := "tun"
-				if a.status.Running && a.status.Mode == "tun" {
-					mode = a.proxyMode
+			if !a.status.TunAvailable {
+				break
+			}
+			if a.status.Running {
+				newMode := "tun"
+				if a.status.Mode == "tun" {
+					newMode = a.proxyMode
+					a.tunMode = false
+				} else {
+					a.tunMode = true
 				}
 				cmds = append(cmds, sendCmd(a.client, ipc.CmdSwitch{
-					ServerIdx: a.tabs.SelectedAbsIdx(),
-					Mode:      mode,
+					ServerIdx: a.status.ServerIdx,
+					Mode:      newMode,
 				}))
+			} else {
+				a.tunMode = !a.tunMode
 			}
 		case "r":
 			if !a.spinning {
@@ -159,7 +207,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	newTabs, _ = a.tabs.Update(msg)
 	a.tabs = newTabs
 
-	// Keep detail server in sync when browsing with showDetails open
 	if a.showDetails {
 		a.detail.Server = a.tabs.SelectedServer()
 	}
@@ -180,7 +227,10 @@ func (a *App) handleIPC(env ipc.Envelope) {
 		a.status = ev
 		a.detail.Status = ev
 		a.detail.TunAvailable = ev.TunAvailable
-		if ev.Mode != "" && ev.Mode != "tun" {
+		if ev.Mode == "tun" {
+			a.tunMode = true
+		} else if ev.Mode != "" {
+			a.tunMode = false
 			a.proxyMode = ev.Mode
 		}
 	case ipc.TypeEventSubscriptionList:
@@ -190,6 +240,14 @@ func (a *App) handleIPC(env ipc.Envelope) {
 		a.info.Refreshing = false
 		a.info.LastRefresh = time.Now()
 		a.info.Group = a.tabs.CurrentGroup()
+		if !a.initialCursorSet {
+			a.initialCursorSet = true
+			if a.status.Running && a.status.ServerIdx >= 0 {
+				a.tabs.SetCursorByAbsIdx(a.status.ServerIdx)
+			} else if a.lastServerName != "" {
+				a.tabs.SetCursorByName(a.lastServerName)
+			}
+		}
 	case ipc.TypeEventLatency:
 		ev, _ := ipc.UnmarshalPayload[ipc.EventLatency](env)
 		a.tabs.Latencies[ev.ServerIdx] = ev.Ms
@@ -231,7 +289,7 @@ func (a *App) View() string {
 		}
 		helpLine = styles.DimText.Render(prompt+": ") + a.inputText + "█"
 	} else {
-		helpLine = styles.DimText.Render("←→ Tab  ↑↓ Srv  [Space] Connect  [T] TUN  [R] Refresh  [Enter] Details  [A/D] Sub  [Q] Quit")
+		helpLine = styles.DimText.Render("←→ Tab  ↑↓ Srv  [Space] Connect  [S] Stop  [T] TUN  [R] Refresh  [Enter] Details  [A/D] Sub  [Q] Quit")
 	}
 
 	return tabBar + "\n" + mainRow + "\n" + bottom + "\n" + statusLine + "\n" + helpLine
@@ -240,7 +298,14 @@ func (a *App) View() string {
 func (a *App) renderStatus() string {
 	mode := a.status.Mode
 	if mode == "" {
-		mode = "socks"
+		mode = a.proxyMode
+	}
+	if !a.status.Running {
+		if a.tunMode && a.status.TunAvailable {
+			mode = "tun"
+		} else {
+			mode = a.proxyMode
+		}
 	}
 	running := "○ stopped"
 	if a.status.Running {

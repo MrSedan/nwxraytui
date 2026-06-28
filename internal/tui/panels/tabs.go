@@ -70,6 +70,32 @@ func (m TabsPanel) ServerAtAbsIdx(idx int) *ipc.ServerInfo {
 	return nil
 }
 
+func (m *TabsPanel) SetCursorByAbsIdx(idx int) bool {
+	cur := 0
+	for i, g := range m.Groups {
+		if idx < cur+len(g.Servers) {
+			m.tabCursor = i
+			m.serverCursor = idx - cur
+			return true
+		}
+		cur += len(g.Servers)
+	}
+	return false
+}
+
+func (m *TabsPanel) SetCursorByName(name string) bool {
+	for i, g := range m.Groups {
+		for j, s := range g.Servers {
+			if s.Remarks == name {
+				m.tabCursor = i
+				m.serverCursor = j
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (m TabsPanel) Update(msg tea.Msg) (TabsPanel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:

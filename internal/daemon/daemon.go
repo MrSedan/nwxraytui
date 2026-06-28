@@ -198,7 +198,7 @@ func (d *Daemon) refresh() {
 	fetcher := subscription.NewFetcher(nil)
 	var all []subscription.Server
 	for _, url := range d.cfg.Subscriptions.URLs {
-		servers, err := fetcher.Fetch(url)
+		servers, _, err := fetcher.Fetch(url)
 		if err != nil {
 			log.Printf("refresh %s: %v", url, err)
 			continue

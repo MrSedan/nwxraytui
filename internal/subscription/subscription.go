@@ -8,12 +8,28 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
 type Server struct {
 	Remarks string          `json:"remarks"`
 	Config  json.RawMessage `json:"config"`
+}
+
+type Meta struct {
+	Title          string
+	Upload         int64
+	Download       int64
+	Total          int64
+	Expire         int64
+	UpdateInterval int
+}
+
+type Group struct {
+	URL     string   `json:"url"`
+	Meta    Meta     `json:"meta"`
+	Servers []Server `json:"servers"`
 }
 
 type Fetcher struct{ client *http.Client }
@@ -25,17 +41,61 @@ func NewFetcher(c *http.Client) *Fetcher {
 	return &Fetcher{client: c}
 }
 
-func (f *Fetcher) Fetch(url string) ([]Server, error) {
+func (f *Fetcher) Fetch(url string) ([]Server, Meta, error) {
 	resp, err := f.client.Get(url)
 	if err != nil {
-		return nil, fmt.Errorf("fetch %s: %w", url, err)
+		return nil, Meta{}, fmt.Errorf("fetch %s: %w", url, err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, Meta{}, err
 	}
-	return parse(body)
+	meta := parseMeta(resp.Header)
+	servers, err := parse(body)
+	return servers, meta, err
+}
+
+func parseMeta(h http.Header) Meta {
+	var m Meta
+	if ui := h.Get("subscription-userinfo"); ui != "" {
+		for _, part := range strings.Split(ui, ";") {
+			kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
+			if len(kv) != 2 {
+				continue
+			}
+			val, err := strconv.ParseInt(strings.TrimSpace(kv[1]), 10, 64)
+			if err != nil {
+				continue
+			}
+			switch strings.TrimSpace(kv[0]) {
+			case "upload":
+				m.Upload = val
+			case "download":
+				m.Download = val
+			case "total":
+				m.Total = val
+			case "expire":
+				m.Expire = val
+			}
+		}
+	}
+	if pt := h.Get("profile-title"); pt != "" {
+		if strings.HasPrefix(pt, "base64:") {
+			decoded, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(pt, "base64:"))
+			if err == nil {
+				m.Title = string(decoded)
+			}
+		} else {
+			m.Title = pt
+		}
+	}
+	if pi := h.Get("profile-update-interval"); pi != "" {
+		if v, err := strconv.Atoi(pi); err == nil {
+			m.UpdateInterval = v
+		}
+	}
+	return m
 }
 
 func parse(body []byte) ([]Server, error) {
@@ -105,4 +165,24 @@ func LoadCachedServers(path string) ([]Server, error) {
 	}
 	var s []Server
 	return s, json.Unmarshal(data, &s)
+}
+
+func CacheGroups(groups []Group, path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	data, err := json.Marshal(groups)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o600)
+}
+
+func LoadCachedGroups(path string) ([]Group, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var g []Group
+	return g, json.Unmarshal(data, &g)
 }

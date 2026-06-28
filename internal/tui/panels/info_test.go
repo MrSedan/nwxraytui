@@ -69,6 +69,11 @@ func TestInfoPanel_SpinTick(t *testing.T) {
 	if p.SpinFrame != 0 {
 		t.Fatalf("wrap: want 0, got %d", p.SpinFrame)
 	}
+	// Assert Refreshing branch rendered
+	out := p.View(40, 20)
+	if !strings.Contains(out, "refreshing") {
+		t.Errorf("expected 'refreshing' in output:\n%s", out)
+	}
 }
 
 func TestInfoPanel_NoExpiryWhenZero(t *testing.T) {

@@ -275,7 +275,9 @@ func (d *Daemon) pingAll() {
 			var meta struct {
 				Outbounds []struct {
 					Settings struct {
-						Vnext []struct {
+						Address string `json:"address"`
+						Port    int    `json:"port"`
+						Vnext   []struct {
 							Address string `json:"address"`
 							Port    int    `json:"port"`
 						} `json:"vnext"`
@@ -289,6 +291,11 @@ func (d *Daemon) pingAll() {
 			host, port := "", 0
 			if err := json.Unmarshal(s.Config, &meta); err == nil {
 				for _, ob := range meta.Outbounds {
+					if ob.Settings.Address != "" {
+						host = ob.Settings.Address
+						port = ob.Settings.Port
+						break
+					}
 					if len(ob.Settings.Vnext) > 0 {
 						host = ob.Settings.Vnext[0].Address
 						port = ob.Settings.Vnext[0].Port
@@ -302,7 +309,7 @@ func (d *Daemon) pingAll() {
 				}
 			}
 			if host != "" {
-				ms := latency.Ping(host, port, 3e9)
+				ms := latency.PingDirect(host, port, 3e9, xray.TunFwmark)
 				d.broadcast(ipc.EventLatency{ServerIdx: abs, Ms: ms})
 			}
 			abs++

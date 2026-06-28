@@ -58,6 +58,18 @@ func (m TabsPanel) CurrentGroup() *ipc.SubscriptionGroup {
 	return &g
 }
 
+func (m TabsPanel) ServerAtAbsIdx(idx int) *ipc.ServerInfo {
+	cur := 0
+	for _, g := range m.Groups {
+		if idx < cur+len(g.Servers) {
+			s := g.Servers[idx-cur]
+			return &s
+		}
+		cur += len(g.Servers)
+	}
+	return nil
+}
+
 func (m TabsPanel) Update(msg tea.Msg) (TabsPanel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:

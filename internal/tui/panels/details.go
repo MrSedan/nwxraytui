@@ -10,9 +10,7 @@ import (
 )
 
 type DetailPanel struct {
-	Server       *ipc.ServerInfo
-	Status       ipc.EventStatus
-	TunAvailable bool
+	Server *ipc.ServerInfo
 }
 
 func (m DetailPanel) View(width, height int) string {
@@ -64,13 +62,6 @@ func (m DetailPanel) View(width, height int) string {
 
 		sb.WriteString("\n")
 	}
-
-	tunLabel := "[T] TUN"
-	if !m.TunAvailable {
-		tunLabel = styles.DimText.Render("[T] TUN (set enableTun=true in NixOS config)")
-	}
-	sb.WriteString("[S] Socks/HTTP  " + tunLabel + "\n")
-	sb.WriteString("[P] System proxy  [Q] Stop\n")
 
 	return styles.PanelBorder.Width(width - 2).Height(height - 2).Render(sb.String())
 }

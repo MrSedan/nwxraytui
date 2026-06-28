@@ -227,8 +227,6 @@ func (a *App) handleIPC(env ipc.Envelope) {
 	case ipc.TypeEventStatus:
 		ev, _ := ipc.UnmarshalPayload[ipc.EventStatus](env)
 		a.status = ev
-		a.detail.Status = ev
-		a.detail.TunAvailable = ev.TunAvailable
 		if ev.Mode == "tun" {
 			a.tunMode = true
 		} else if ev.Mode != "" {

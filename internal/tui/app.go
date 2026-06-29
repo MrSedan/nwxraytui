@@ -110,28 +110,36 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		if a.inputMode {
-			switch msg.String() {
-			case "enter":
-				if a.inputText != "" {
-					switch a.inputCmd {
-					case "add":
+			switch a.inputCmd {
+			case "del":
+				switch msg.String() {
+				case "enter", "y", "Y":
+					cmds = append(cmds, sendCmd(a.client, ipc.CmdRemoveSub{URL: a.inputText}))
+					a.inputMode = false
+					a.inputText = ""
+				default:
+					a.inputMode = false
+					a.inputText = ""
+				}
+			case "add":
+				switch msg.String() {
+				case "enter":
+					if a.inputText != "" {
 						cmds = append(cmds, sendCmd(a.client, ipc.CmdAddSub{URL: a.inputText}))
-					case "del":
-						cmds = append(cmds, sendCmd(a.client, ipc.CmdRemoveSub{URL: a.inputText}))
 					}
-				}
-				a.inputMode = false
-				a.inputText = ""
-			case "esc", "ctrl+c":
-				a.inputMode = false
-				a.inputText = ""
-			case "backspace", "ctrl+h":
-				if len(a.inputText) > 0 {
-					a.inputText = a.inputText[:len(a.inputText)-1]
-				}
-			default:
-				if msg.Type == tea.KeyRunes {
-					a.inputText += string(msg.Runes)
+					a.inputMode = false
+					a.inputText = ""
+				case "esc", "ctrl+c":
+					a.inputMode = false
+					a.inputText = ""
+				case "backspace", "ctrl+h":
+					if len(a.inputText) > 0 {
+						a.inputText = a.inputText[:len(a.inputText)-1]
+					}
+				default:
+					if msg.Type == tea.KeyRunes {
+						a.inputText += string(msg.Runes)
+					}
 				}
 			}
 			return a, tea.Batch(cmds...)
@@ -145,9 +153,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.inputCmd = "add"
 			a.inputText = ""
 		case "d":
-			a.inputMode = true
-			a.inputCmd = "del"
-			a.inputText = ""
+			if g := a.tabs.CurrentGroup(); g != nil {
+				a.inputMode = true
+				a.inputCmd = "del"
+				a.inputText = g.URL
+			}
 		case " ":
 			if idx := a.tabs.SelectedAbsIdx(); idx >= 0 {
 				if a.status.Running {
@@ -283,11 +293,11 @@ func (a *App) View() string {
 
 	var helpLine string
 	if a.inputMode {
-		prompt := "Add subscription URL"
 		if a.inputCmd == "del" {
-			prompt = "Remove subscription URL"
+			helpLine = styles.DimText.Render("Remove "+a.inputText+"? [Y/n]: ")
+		} else {
+			helpLine = styles.DimText.Render("Add subscription URL: ") + a.inputText + "█"
 		}
-		helpLine = styles.DimText.Render(prompt+": ") + a.inputText + "█"
 	} else {
 		helpLine = styles.DimText.Render("←→ Tab  ↑↓ Srv  [Space] Connect  [S] Stop  [T] TUN  [R] Refresh  [P] Ping  [Enter] Details  [A/D] Sub  [Q] Quit")
 	}

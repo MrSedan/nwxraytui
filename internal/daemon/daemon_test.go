@@ -3,6 +3,7 @@ package daemon_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -12,8 +13,20 @@ import (
 	"github.com/mrsedan/nwxraytui/internal/ipc"
 )
 
+// shortSock returns a short socket path under /tmp to avoid the 104-char
+// macOS Unix socket path limit when Nix sets a long $TMPDIR in the build sandbox.
+func shortSock(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "d")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return filepath.Join(dir, "s.sock")
+}
+
 func TestDaemon_ConnectAndStatus(t *testing.T) {
-	sock := filepath.Join(t.TempDir(), "daemon.sock")
+	sock := shortSock(t)
 	cfg := &config.Config{}
 	cfg.Proxy.SocksPort = 10808
 	cfg.Proxy.HTTPPort = 10809
@@ -54,7 +67,7 @@ func TestDaemon_RefreshBroadcastsSubscriptionList(t *testing.T) {
 	}))
 	defer subSrv.Close()
 
-	sock := filepath.Join(t.TempDir(), "daemon.sock")
+	sock := shortSock(t)
 	cfg := &config.Config{}
 	cfg.Proxy.SocksPort = 10810
 	cfg.Proxy.HTTPPort = 10811
